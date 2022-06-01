@@ -21,12 +21,14 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 
 /**
+ *
  * Schedules {@link TimerTask}s for one-time future execution in a background
  * thread.
  */
 public interface Timer {
 
     /**
+     * 提交一个定时任务（TimerTask），类似于向线程池提交任务
      * Schedules the specified {@link TimerTask} for one-time execution after
      * the specified delay.
      *

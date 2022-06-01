@@ -18,6 +18,8 @@ package org.apache.dubbo.common.timer;
 
 /**
  * A handle associated with a {@link TimerTask} that is returned by a
+ * Timeout 对象与 TimerTask 对象一一对应，两者的关系类似于线程池返回的 Future 对象与提交到线程池中的任务对象之间的关系。
+ *  * 通过 Timeout 对象，我们不仅可以查看定时任务的状态，还可以操作定时任务
  * {@link Timer}.
  */
 public interface Timeout {
@@ -45,6 +47,8 @@ public interface Timeout {
     boolean isCancelled();
 
     /**
+     * 尝试取消定时任务，如果任务已经被执行或已经取消，方法正常返回.
+     *
      * Attempts to cancel the {@link TimerTask} associated with this handle.
      * If the task has been executed or cancelled already, it will return with
      * no side effect.
