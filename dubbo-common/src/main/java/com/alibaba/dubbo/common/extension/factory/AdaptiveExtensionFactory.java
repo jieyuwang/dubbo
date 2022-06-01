@@ -25,16 +25,29 @@ import java.util.Collections;
 import java.util.List;
 
 /**
+ * 自适应的AdaptiveExtensionLoader
  * AdaptiveExtensionFactory
+ * Dubbo会为每一个扩展创建一个自适应实例。
+ * 如果扩展类上有@Adaptive，会使用该类作为自适应类。
+ * 如果没有，Dubbo会为我们创建一个。
+ * 所以`ExtensionLoader.getExtensionLoader(ExtensionFactory.class).getAdaptiveExtension())`会返回一个AdaptiveExtensionLoader实例，作为自适应扩展实例。
+ * AdaptiveExtensionLoader会遍历所有的ExtensionFactory实现，尝试着去加载扩展。
+ * 如果找到了，返回。如果没有，在下一个ExtensionFactory中继续找。
+ *
+ * Dubbo内置了两个ExtensionFactory，分别从Dubbo自身的扩展机制和Spring容器中去寻找。
+ * 由于ExtensionFactory本身也是一个扩展点，我们可以实现自己的ExtensionFactory，让Dubbo的自动装配支持我们自定义的组件。
  */
 @Adaptive
 public class AdaptiveExtensionFactory implements ExtensionFactory {
 
+    //用于缓存所有的工厂实现，包括SpiExtensionFactory和SpringExtensionFactory。
     private final List<ExtensionFactory> factories;
 
     public AdaptiveExtensionFactory() {
+        //ExtensionFactory也加了SPI注解，获取工厂的所有的扩展点加载器
         ExtensionLoader<ExtensionFactory> loader = ExtensionLoader.getExtensionLoader(ExtensionFactory.class);
         List<ExtensionFactory> list = new ArrayList<ExtensionFactory>();
+        //遍历所有的工厂名称，获取对应的工厂，缓存
         for (String name : loader.getSupportedExtensions()) {
             list.add(loader.getExtension(name));
         }
@@ -43,7 +56,9 @@ public class AdaptiveExtensionFactory implements ExtensionFactory {
 
     @Override
     public <T> T getExtension(Class<T> type, String name) {
+        //被AdaptiveExtensionFactory缓存的工厂会通过TreeSet进行排序，SPI排在前面，Spring排在后面
         for (ExtensionFactory factory : factories) {
+            //当调用getExtension方法时，会遍历所有的工厂，先从SPI容器中获取扩展类，如果没找到，则再从Spring容器中查找。
             T extension = factory.getExtension(type, name);
             if (extension != null) {
                 return extension;

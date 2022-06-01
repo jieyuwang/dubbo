@@ -21,6 +21,7 @@ import com.alibaba.dubbo.common.extension.ExtensionLoader;
 import com.alibaba.dubbo.common.extension.SPI;
 
 /**
+ * Dubbo自己的Spi去加载Extension
  * SpiExtensionFactory
  */
 public class SpiExtensionFactory implements ExtensionFactory {

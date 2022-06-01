@@ -1,0 +1,2 @@
+com.alibaba.dubbo.common.spi.MongoRepository
+com.alibaba.dubbo.common.spi.MysqlRepository

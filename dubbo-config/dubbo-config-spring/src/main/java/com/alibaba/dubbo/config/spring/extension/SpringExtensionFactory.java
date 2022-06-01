@@ -33,6 +33,7 @@ import org.springframework.context.event.ContextClosedEvent;
 import java.util.Set;
 
 /**
+ * 从Spring容器中去加载Extension
  * SpringExtensionFactory
  */
 public class SpringExtensionFactory implements ExtensionFactory {

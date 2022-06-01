@@ -46,6 +46,10 @@ import static org.junit.matchers.JUnitMatchers.containsString;
 
 public class ExtensionLoader_Adaptive_Test {
 
+    /**
+     * 测试获取默认的实现类，也就是@Adaptive修饰过的
+     * @throws Exception
+     */
     @Test
     public void test_useAdaptiveClass() throws Exception {
         ExtensionLoader<HasAdaptiveExt> loader = ExtensionLoader.getExtensionLoader(HasAdaptiveExt.class);

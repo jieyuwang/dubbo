@@ -106,16 +106,20 @@ public class ExtensionLoader<T> {
     public static <T> ExtensionLoader<T> getExtensionLoader(Class<T> type) {
         if (type == null)
             throw new IllegalArgumentException("Extension type == null");
+        // 扩展点必须是接口
         if (!type.isInterface()) {
             throw new IllegalArgumentException("Extension type(" + type + ") is not interface!");
         }
+        //判断是否存在SPi注解
         if (!withExtensionAnnotation(type)) {
             throw new IllegalArgumentException("Extension type(" + type +
                     ") is not extension, because WITHOUT @" + SPI.class.getSimpleName() + " Annotation!");
         }
-
+        // 从缓存中根据接口获取对应的ExtensionLoader
+        // 每个扩展只会被加载一次
         ExtensionLoader<T> loader = (ExtensionLoader<T>) EXTENSION_LOADERS.get(type);
         if (loader == null) {
+            // 初始化扩展
             EXTENSION_LOADERS.putIfAbsent(type, new ExtensionLoader<T>(type));
             loader = (ExtensionLoader<T>) EXTENSION_LOADERS.get(type);
         }
@@ -285,7 +289,7 @@ public class ExtensionLoader<T> {
         return Collections.unmodifiableSet(new TreeSet<String>(cachedInstances.keySet()));
     }
 
-    /**
+    /** 1、getExtension方法
      * Find the extension with the given name. If the specified name is not found, then {@link IllegalStateException}
      * will be thrown.
      */
@@ -432,6 +436,12 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     * Dubbo需要在运行时根据方法参数来决定该使用哪个扩展，所以有了扩展点自适应实例。
+     * 其实是一个扩展点的代理，将扩展的选择从Dubbo启动时，延迟到RPC调用时。
+     * Dubbo中每一个扩展点都有一个自适应类，如果没有显式提供，Dubbo会自动为我们创建一个，默认使用Javaassist
+     * @return
+     */
     @SuppressWarnings("unchecked")
     public T getAdaptiveExtension() {
         Object instance = cachedAdaptiveInstance.get();
@@ -482,8 +492,18 @@ public class ExtensionLoader<T> {
         return new IllegalStateException(buf.toString());
     }
 
+    /**
+     *
+     1. 先根据name来得到对应的扩展类。从ClassPath下`META-INF`文件夹下读取扩展点配置文件。
+     2. 使用反射创建一个扩展类的实例
+     3. 对扩展类实例的属性进行依赖注入，即IOC。
+     4. 如果有wrapper，添加wrapper。即AOP。
+     * @param name
+     * @return
+     */
     @SuppressWarnings("unchecked")
     private T createExtension(String name) {
+        // 根据扩展点名称得到扩展类，比如对于LoadBalance，根据random得到RandomLoadBalance类
         Class<?> clazz = getExtensionClasses().get(name);
         if (clazz == null) {
             throw findException(name);
@@ -491,10 +511,16 @@ public class ExtensionLoader<T> {
         try {
             T instance = (T) EXTENSION_INSTANCES.get(clazz);
             if (instance == null) {
+                // 使用反射调用nesInstance来创建扩展类的一个示例
                 EXTENSION_INSTANCES.putIfAbsent(clazz, clazz.newInstance());
                 instance = (T) EXTENSION_INSTANCES.get(clazz);
             }
+            // 对扩展类示例进行依赖注入
             injectExtension(instance);
+            // 如果有wrapper，添加wrapper---Wapper类就是jdk的反射。
+            //Wapper是一个包装类。主要用于“包裹”目标类，仅可以通过getWapper(Class)方法创建子类。
+            // 在创建子类过程中，子类代码会对传进来的Class对象进行解析，拿到类方法，类成员变量等信息。
+            // 而这个包装类持有实际的扩展点实现类。也可以把扩展点的公共逻辑全部移到包装类中，功能上就是作为AOP实现。
             Set<Class<?>> wrapperClasses = cachedWrapperClasses;
             if (wrapperClasses != null && !wrapperClasses.isEmpty()) {
                 for (Class<?> wrapperClass : wrapperClasses) {
@@ -508,6 +534,15 @@ public class ExtensionLoader<T> {
         }
     }
 
+    /**
+     * 要实现对扩展实例的依赖的自动装配，首先需要知道有哪些依赖，这些依赖的类型是什么。
+     * Dubbo的方案是查找Java标准的setter方法。即方法名以set开始，只有一个参数。如果扩展类中有这样的set方法，Dubbo会对其进行依赖注入，类似于Spring的set方法注入。
+     * 但是Dubbo中的依赖注入比Spring要复杂，因为Spring注入的都是Spring bean，都是由Spring容器来管理的。
+     * 而Dubbo的依赖注入中，需要注入的可能是另一个Dubbo的扩展，也可能是一个Spring Bean，或是Google guice的组件，或其他任何一个框架中的组件。
+     * Dubbo需要能够从任何一个场景中加载扩展。在injectExtension方法中，是用`Object object = objectFactory.getExtension(pt, property)`来实现的。
+     * @param instance
+     * @return
+     */
     private T injectExtension(T instance) {
         try {
             if (objectFactory != null) {
@@ -551,7 +586,18 @@ public class ExtensionLoader<T> {
             throw new IllegalStateException("No such extension \"" + name + "\" for " + type.getName() + "!");
         return clazz;
     }
-
+    /**
+     * 先从缓存中获取，如果没有，就从配置文件中加载。配置文件的路径
+     *
+     * - `META-INF/dubbo/internal`
+     * - `META-INF/dubbo`
+     * - `META-INF/services`
+     *
+     * 1. 使用反射创建扩展实例 这个过程很简单，使用`clazz.newInstance())`来完成。创建的扩展实例的属性都是空值。
+     * 2. 扩展实例自动装配 在实际的场景中，类之间都是有依赖的。扩展实例中也会引用一些依赖，比如简单的Java类，另一个Dubbo的扩展或一个Spring Bean等。
+     * 3. 扩展实例自动包装 自动包装就是要实现类似于Spring的AOP功能。Dubbo利用它在内部实现一些通用的功能，比如日志，监控等
+     * @return
+     */
     private Map<String, Class<?>> getExtensionClasses() {
         Map<String, Class<?>> classes = cachedClasses.get();
         if (classes == null) {
@@ -565,6 +611,7 @@ public class ExtensionLoader<T> {
         }
         return classes;
     }
+
 
     // synchronized in getExtensionClasses
     private Map<String, Class<?>> loadExtensionClasses() {
@@ -734,6 +781,10 @@ public class ExtensionLoader<T> {
         return cachedAdaptiveClass = createAdaptiveExtensionClass();
     }
 
+    /**
+     * 它首先会生成自适应类的Java源码，然后再将源码编译成Java的字节码，加载到JVM中
+     * @return
+     */
     private Class<?> createAdaptiveExtensionClass() {
         String code = createAdaptiveExtensionClassCode();
         ClassLoader classLoader = findClassLoader();
@@ -741,6 +792,10 @@ public class ExtensionLoader<T> {
         return compiler.compile(code, classLoader);
     }
 
+    /**
+     * 使用一个StringBuilder来构建自适应类的Java源码
+     * @return
+     */
     private String createAdaptiveExtensionClassCode() {
         StringBuilder codeBuilder = new StringBuilder();
         Method[] methods = type.getMethods();
